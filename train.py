@@ -163,8 +163,8 @@ def main(_):
     train_op = tf.train.AdamOptimizer(
         learning_rate_input)
     train_step = slim.learning.create_train_op(cross_entropy_mean, train_op)
-#    train_step = tf.train.GradientDescentOptimizer(
-#        learning_rate_input).minimize(cross_entropy_mean)
+    #train_step = tf.train.GradientDescentOptimizer(
+    #learning_rate_input).minimize(cross_entropy_mean)
   predicted_indices = tf.argmax(logits, 1)
   expected_indices = tf.argmax(ground_truth_input, 1)
   correct_prediction = tf.equal(predicted_indices, expected_indices)
@@ -220,10 +220,12 @@ def main(_):
       if training_step <= training_steps_sum:
         learning_rate_value = learning_rates_list[i]
         break
+    
     # Pull the audio samples we'll use for training.
     train_fingerprints, train_ground_truth = audio_processor.get_data(
         FLAGS.batch_size, 0, model_settings, FLAGS.background_frequency,
         FLAGS.background_volume, time_shift_samples, 'training', sess)
+    
     # Run the graph with this batch of training data.
     train_summary, train_accuracy, cross_entropy_value, _, _ = sess.run(
         [
@@ -240,6 +242,10 @@ def main(_):
     tf.logging.info('Step #%d: rate %f, accuracy %.2f%%, cross entropy %f' %
                     (training_step, learning_rate_value, train_accuracy * 100,
                      cross_entropy_value))
+
+    # -------------------------------------
+    # validate
+    #
     is_last_step = (training_step == training_steps_max)
     if (training_step % FLAGS.eval_step_interval) == 0 or is_last_step:
       set_size = audio_processor.set_size('validation')
@@ -247,8 +253,8 @@ def main(_):
       total_conf_matrix = None
       for i in xrange(0, set_size, FLAGS.batch_size):
         validation_fingerprints, validation_ground_truth = (
-            audio_processor.get_data(FLAGS.batch_size, i, model_settings, 0.0,
-                                     0.0, 0, 'validation', sess))
+            audio_processor.get_data(FLAGS.batch_size, i, model_settings, FLAGS.background_frequency,
+                                     FLAGS.background_volume, time_shift_samples, 'validation', sess))
 
         # Run a validation step and capture training summaries for TensorBoard
         # with the `merged` op.
@@ -266,9 +272,16 @@ def main(_):
           total_conf_matrix = conf_matrix
         else:
           total_conf_matrix += conf_matrix
+
+      other_base = total_conf_matrix[0:2].sum()
+      other_trigger = total_conf_matrix[0:2,2:-1].sum()
+      trigger_base = total_conf_matrix[2:-1].sum()
+      trigger_count = total_conf_matrix[2:-1,2:-1].trace()
       tf.logging.info('Confusion Matrix:\n %s' % (total_conf_matrix))
       tf.logging.info('Step %d: Validation accuracy = %.2f%% (N=%d)' %
                       (training_step, total_accuracy * 100, set_size))
+      tf.logging.info('FRR = %.2f%% FA = %.2f%%' % (trigger_count/trigger_base * 100,
+                                                    other_trigger/other_base * 100))
 
       # Save the model checkpoint when validation accuracy improves
       if total_accuracy > best_accuracy:
@@ -279,13 +292,17 @@ def main(_):
         saver.save(sess, checkpoint_path, global_step=training_step)
       tf.logging.info('So far the best validation accuracy is %.2f%%' % (best_accuracy*100))
 
+  # -----------------------
+  # test
+  #
   set_size = audio_processor.set_size('testing')
   tf.logging.info('set_size=%d', set_size)
   total_accuracy = 0
   total_conf_matrix = None
   for i in xrange(0, set_size, FLAGS.batch_size):
     test_fingerprints, test_ground_truth = audio_processor.get_data(
-        FLAGS.batch_size, i, model_settings, 0.0, 0.0, 0, 'testing', sess)
+        FLAGS.batch_size, i, model_settings, FLAGS.background_frequency,
+        FLAGS.background_volume, time_shift_samples, 'testing', sess)
     test_accuracy, conf_matrix = sess.run(
         [evaluation_step, confusion_matrix],
         feed_dict={
@@ -299,9 +316,16 @@ def main(_):
       total_conf_matrix = conf_matrix
     else:
       total_conf_matrix += conf_matrix
+
+  other_base = total_conf_matrix[0:2].sum()
+  other_trigger = total_conf_matrix[0:2,2:-1].sum()
+  trigger_base = total_conf_matrix[2:-1].sum()
+  trigger_count = total_conf_matrix[2:-1,2:-1].trace()
   tf.logging.info('Confusion Matrix:\n %s' % (total_conf_matrix))
   tf.logging.info('Final test accuracy = %.2f%% (N=%d)' % (total_accuracy * 100,
                                                            set_size))
+  tf.logging.info('FRR = %.2f%% FA = %.2f%%' % (trigger_count/trigger_base * 100,
+                                                other_trigger/other_base * 100))
 
 
 if __name__ == '__main__':
@@ -323,14 +347,14 @@ if __name__ == '__main__':
   parser.add_argument(
       '--background_volume',
       type=float,
-      default=0.1,
+      default=1,
       help="""\
       How loud the background noise should be, between 0 and 1.
       """)
   parser.add_argument(
       '--background_frequency',
       type=float,
-      default=0.8,
+      default=1,
       help="""\
       How many of the training samples have background noise mixed in.
       """)
@@ -453,4 +477,14 @@ if __name__ == '__main__':
       help='Whether to check for invalid numbers during processing')
 
   FLAGS, unparsed = parser.parse_known_args()
+
+  print()
+  print('FLAGS')
+  print('----------------------')
+  for k in FLAGS.__dict__:
+    if FLAGS.__dict__[k] is not None:
+      print(k)
+      print('          : ', FLAGS.__dict__[k])
+  print()
+
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

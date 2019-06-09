@@ -201,7 +201,11 @@ class AudioProcessor(object):
       statinfo = os.stat(filepath)
       tf.logging.info('Successfully downloaded %s (%d bytes)', filename,
                       statinfo.st_size)
-    tarfile.open(filepath, 'r:gz').extractall(dest_directory)
+      print('before extract all : ', filepath, ' to ', dest_directory)
+      tarfile.open(filepath, 'r:gz').extractall(dest_directory)
+      print('extract all done')
+    else:
+      print('skip download and extract')
 
   def prepare_data_index(self, silence_percentage, unknown_percentage,
                          wanted_words, validation_percentage,
@@ -430,7 +434,7 @@ class AudioProcessor(object):
     data = np.zeros((sample_count, model_settings['fingerprint_size']))
     labels = np.zeros((sample_count, model_settings['label_count']))
     desired_samples = model_settings['desired_samples']
-    use_background = self.background_data and (mode == 'training')
+    use_background = self.background_data # and (mode == 'training')
     pick_deterministically = (mode != 'training')
     # Use the processing graph we created earlier to repeatedly to generate the
     # final output sample data we'll use in training.
