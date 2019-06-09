@@ -290,43 +290,55 @@ def main(_):
                                        FLAGS.model_architecture + '_'+ str(int(best_accuracy*10000)) + '.ckpt')
         tf.logging.info('Saving best model to "%s-%d"', checkpoint_path, training_step)
         saver.save(sess, checkpoint_path, global_step=training_step)
-      tf.logging.info('So far the best validation accuracy is %.2f%%' % (best_accuracy*100))
+      print('So far the best validation accuracy is %.2f%%' % (best_accuracy*100))
 
   # -----------------------
   # test
   #
   set_size = audio_processor.set_size('testing')
   tf.logging.info('set_size=%d', set_size)
-  total_accuracy = 0
-  total_conf_matrix = None
-  for i in xrange(0, set_size, FLAGS.batch_size):
-    test_fingerprints, test_ground_truth = audio_processor.get_data(
-        FLAGS.batch_size, i, model_settings, FLAGS.background_frequency,
-        FLAGS.background_volume, time_shift_samples, 'testing', sess)
-    test_accuracy, conf_matrix = sess.run(
-        [evaluation_step, confusion_matrix],
-        feed_dict={
-            fingerprint_input: test_fingerprints,
-            ground_truth_input: test_ground_truth,
-            dropout_prob: 1.0
-        })
-    batch_size = min(FLAGS.batch_size, set_size - i)
-    total_accuracy += (test_accuracy * batch_size) / set_size
-    if total_conf_matrix is None:
-      total_conf_matrix = conf_matrix
-    else:
-      total_conf_matrix += conf_matrix
+  accuracys = []
+  FRRs = []
+  FAs = []
 
-  other_base = total_conf_matrix[0:2].sum()
-  other_trigger = total_conf_matrix[0:2,2:-1].sum()
-  trigger_base = total_conf_matrix[2:-1].sum()
-  trigger_count = total_conf_matrix[2:-1,2:-1].trace()
-  tf.logging.info('Confusion Matrix:\n %s' % (total_conf_matrix))
-  tf.logging.info('Final test accuracy = %.2f%% (N=%d)' % (total_accuracy * 100,
-                                                           set_size))
-  tf.logging.info('FRR = %.2f%% FA = %.2f%%' % (trigger_count/trigger_base * 100,
-                                                other_trigger/other_base * 100))
+  for noise_volume in [0.1, 0.25, 0.5, 1, 2, 4, 8]:
+    print('Test under noise volume : ', noise_volume)
+    total_accuracy = 0
+    total_conf_matrix = None
+    for i in xrange(0, set_size, FLAGS.batch_size):
+      test_fingerprints, test_ground_truth = audio_processor.get_data(
+          FLAGS.batch_size, i, model_settings, FLAGS.background_frequency,
+          noise_volume, time_shift_samples, 'testing', sess)
+      test_accuracy, conf_matrix = sess.run(
+          [evaluation_step, confusion_matrix],
+          feed_dict={
+              fingerprint_input: test_fingerprints,
+              ground_truth_input: test_ground_truth,
+              dropout_prob: 1.0
+          })
+      batch_size = min(FLAGS.batch_size, set_size - i)
+      total_accuracy += (test_accuracy * batch_size) / set_size
+      if total_conf_matrix is None:
+        total_conf_matrix = conf_matrix
+      else:
+        total_conf_matrix += conf_matrix
 
+    other_base = total_conf_matrix[0:2].sum()
+    other_trigger = total_conf_matrix[0:2,2:-1].sum()
+    trigger_base = total_conf_matrix[2:-1].sum()
+    trigger_count = total_conf_matrix[2:-1,2:-1].trace()
+    print('Confusion Matrix:\n %s' % (total_conf_matrix))
+    print('Final test accuracy = %.2f%% (N=%d)' % (total_accuracy * 100,
+                                                            set_size))
+    print('FRR = %.2f%% FA = %.2f%%' % (trigger_count/trigger_base * 100,
+                                                    other_trigger/other_base * 100))
+    accuracys.extend([total_accuracy * 100])
+    FRRs.extend([trigger_count/trigger_base * 100])
+    FAs.extend([other_trigger/other_base * 100])
+
+  print('accuracys : ', accuracys)
+  print('FRRs : ', FRRs)
+  print('FAs : ', FAs)
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()

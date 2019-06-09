@@ -201,11 +201,11 @@ class AudioProcessor(object):
       statinfo = os.stat(filepath)
       tf.logging.info('Successfully downloaded %s (%d bytes)', filename,
                       statinfo.st_size)
-      print('before extract all : ', filepath, ' to ', dest_directory)
+      tf.logging.info('before extract all : ', filepath, ' to ', dest_directory)
       tarfile.open(filepath, 'r:gz').extractall(dest_directory)
-      print('extract all done')
+      tf.logging.info('extract all done')
     else:
-      print('skip download and extract')
+      tf.logging.info('skip download and extract')
 
   def prepare_data_index(self, silence_percentage, unknown_percentage,
                          wanted_words, validation_percentage,
@@ -436,6 +436,7 @@ class AudioProcessor(object):
     desired_samples = model_settings['desired_samples']
     use_background = self.background_data # and (mode == 'training')
     pick_deterministically = (mode != 'training')
+    random_noise = (mode != 'testing')
     # Use the processing graph we created earlier to repeatedly to generate the
     # final output sample data we'll use in training.
     for i in xrange(offset, offset + sample_count):
@@ -470,10 +471,13 @@ class AudioProcessor(object):
         background_clipped = background_samples[background_offset:(
             background_offset + desired_samples)]
         background_reshaped = background_clipped.reshape([desired_samples, 1])
-        if np.random.uniform(0, 1) < background_frequency:
-          background_volume = np.random.uniform(0, background_volume_range)
+        if random_noise:
+          if np.random.uniform(0, 1) < background_frequency:
+            background_volume = np.random.uniform(0, background_volume_range)
+          else:
+            background_volume = 0
         else:
-          background_volume = 0
+          background_volume = background_volume_range
       else:
         background_reshaped = np.zeros([desired_samples, 1])
         background_volume = 0
